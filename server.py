@@ -48,8 +48,15 @@ def health(_=Depends(authorize)):
         "model_id": MODEL_ID, "loaded": model is not None}}
 
 
+@app.post("/warmup")
+def warmup(_=Depends(authorize)):
+    runtime = get_model()
+    return {"ok": True, "device": "cuda" if torch.cuda.is_available() else "cpu",
+            "sampling_rate": runtime.sampling_rate}
+
+
 @app.post("/generate")
-async def generate(text: str = Form(...), ref_audio: UploadFile = File(...), ref_text: str = Form(""),
+def generate(text: str = Form(...), ref_audio: UploadFile = File(...), ref_text: str = Form(""),
                    language: str = Form("vi"), speed: float = Form(1.0), num_step: int = Form(32),
                    guidance_scale: float = Form(2.0), seed: int | None = Form(None),
                    denoise: bool = Form(False), postprocess_output: bool = Form(True),
@@ -59,7 +66,7 @@ async def generate(text: str = Form(...), ref_audio: UploadFile = File(...), ref
     used_seed = seed if seed is not None else random.randint(0, 2**31 - 1)
     suffix = Path(ref_audio.filename or "ref.wav").suffix or ".wav"
     reference = DATA / f"ref-{time.time_ns()}{suffix}"
-    reference.write_bytes(await ref_audio.read())
+    reference.write_bytes(ref_audio.file.read())
     output = DATA / f"out-{time.time_ns()}.wav"
     try:
         torch.manual_seed(used_seed)
@@ -78,7 +85,7 @@ async def generate(text: str = Form(...), ref_audio: UploadFile = File(...), ref
 
 
 @app.post("/generate-batch")
-async def generate_batch(entries: str = Form(...), voice_prompt: UploadFile = File(...),
+def generate_batch(entries: str = Form(...), voice_prompt: UploadFile = File(...),
                          language: str = Form("vi"), speed: float = Form(1.0),
                          num_step: int = Form(32), guidance_scale: float = Form(2.0),
                          seed: int | None = Form(None), denoise: bool = Form(False),
@@ -95,7 +102,7 @@ async def generate_batch(entries: str = Form(...), voice_prompt: UploadFile = Fi
 
     job_dir = Path(tempfile.mkdtemp(prefix="batch-", dir=DATA))
     prompt_path = job_dir / "voice.pt"
-    prompt_path.write_bytes(await voice_prompt.read())
+    prompt_path.write_bytes(voice_prompt.file.read())
     archive = job_dir / "voices.zip"
     manifest = []
     try:
